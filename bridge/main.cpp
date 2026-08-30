@@ -275,26 +275,37 @@ int main(int argc, char** argv) {
         // jumping is what keeps timeouts, retries and duty-cycle refill behaving
         // as they do on hardware: a node that sees time move in 500 ms jumps
         // takes different branches.
-        while (g_sim_millis < at) {
-          g_sim_millis++;
-          // The RTC only has second resolution, so it moves once per 1000 of
-          // these - but it has to actually move. Without this the comment
-          // above was aspirational: rtc_clock stayed at its construction
-          // value forever, so two adverts sent seconds apart carried the
-          // same embedded timestamp and hashed identically, and the second
-          // was silently deduplicated as a repeat of the first.
-          if (g_sim_millis % 1000 == 0) {
-            rtc_clock.advance(1);
+        //
+        // A tick that advances no time still gets one pass, which is the only
+        // reason for the second branch. Running that pass unconditionally gave
+        // the final millisecond of every advancing tick a second one at the
+        // same clock value: beginTick, servicePendingIrq, loop and drainTx all
+        // ran twice there. Every timer the firmware runs off this clock fired
+        // an extra time at each tick boundary, and a pending interrupt was
+        // serviced twice, on every tick, for every node.
+        if (g_sim_millis < at) {
+          while (g_sim_millis < at) {
+            g_sim_millis++;
+            // The RTC only has second resolution, so it moves once per 1000 of
+            // these - but it has to actually move. Without this the comment
+            // above was aspirational: rtc_clock stayed at its construction
+            // value forever, so two adverts sent seconds apart carried the
+            // same embedded timestamp and hashed identically, and the second
+            // was silently deduplicated as a repeat of the first.
+            if (g_sim_millis % 1000 == 0) {
+              rtc_clock.advance(1);
+            }
+            sim_hal.beginTick(g_sim_millis);
+            sim_hal.servicePendingIrq();
+            loop();
+            drainTx();
           }
+        } else {
           sim_hal.beginTick(g_sim_millis);
           sim_hal.servicePendingIrq();
           loop();
           drainTx();
         }
-        sim_hal.beginTick(g_sim_millis);
-        sim_hal.servicePendingIrq();
-        loop();
-        drainTx();
         flushConsole();
         {
           // What the chip has seen, alongside the acknowledgement. Cheap, and
