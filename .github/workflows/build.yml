@@ -27,16 +27,17 @@ permissions:
 
 env:
   UPSTREAM: meshcore-dev/MeshCore
-  # Which platforms to publish. Only linux-amd64 is live: the Windows and macOS
-  # cross-builds do not compile yet (MSIM-44), and shipping a release that is
-  # missing two thirds of its matrix every night is noise rather than signal.
-  # Widen it with the PLATFORMS repository variable, no commit needed.
+  # Which platforms to publish. All three build today, and the PLATFORMS
+  # repository variable is set to all three, so that is what a release carries.
+  # The fallback below stays at linux-amd64 because it is the one target needing
+  # no cross toolchain: a fork with the variable unset should publish something
+  # rather than fail nightly on two it was never set up for.
   PLATFORMS: ${{ vars.PLATFORMS || 'linux-amd64' }}
-  # radioserver builds for platforms a node binary cannot. It is one translation
-  # unit against VirtualSX1262 with no Arduino shims and no Crypto, so the
-  # Windows and macOS builds that MSIM-44 blocks for firmware work here today —
-  # which matters, because an operator on a Mac needs this one piece even when
-  # every node they run is a Linux binary under emulation.
+  # radioserver built for every platform back when the firmware cross-builds
+  # still did not. It is one translation unit against VirtualSX1262 with no
+  # Arduino shims and no Crypto, which is why nothing ever blocked it, and it
+  # matters because an operator on a Mac needs this one piece even when every
+  # node they run is a Linux binary under emulation.
   RADIOSERVER_PLATFORMS: ${{ vars.RADIOSERVER_PLATFORMS || 'linux-amd64 darwin-arm64 windows-amd64' }}
 
 jobs:
