@@ -1,7 +1,7 @@
 [
   {
     "id": "linux-amd64",
-    "runs_on": "ubuntu-latest",
+    "runs_on": "ubuntu-22.04",
     "cxx": "g++",
     "cc": "gcc"
   },
