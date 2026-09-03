@@ -160,7 +160,7 @@ void put16(uint8_t* p, uint16_t v) {
 // state there was no way here to tell a node configured correctly from one that
 // was not.
 void writeRadioStats(sock_t fd) {
-  uint8_t sb[37];
+  uint8_t sb[39];
   put32(&sb[0], gChip.irqReads());
   put32(&sb[4], gChip.busyReads());
   put32(&sb[8], gChip.busyMs());
@@ -183,6 +183,13 @@ void writeRadioStats(sock_t fd) {
   // Three states, because "has not transmitted" is not "transmitted with the
   // module out": 0 no transmission yet, 1 module out, 2 module in.
   sb[36] = !gChip.hasTransmitted() ? 0 : (gChip.femAtTx() ? 2 : 1);
+  // The DIO1 routing mask, which is not the IRQ enable mask above. Reported
+  // separately because confusing the two is a fault that has already happened
+  // here: the model read the enable mask where SetDioIrqParams gives the routing
+  // mask, HeaderValid raised DIO1 part-way through a carrier, and the pin was
+  // still high when RxDone arrived - no rising edge for a driver that attaches
+  // it on one. Appended, because the host reads this record on length.
+  put16(&sb[37], gChip.dio1Mask());
 
   writeMsg(fd, kRadioStats, sb, sizeof(sb));
 }
