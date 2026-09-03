@@ -65,6 +65,7 @@
   using socklen_compat_t = socklen_t;
 #endif
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -109,6 +110,19 @@ VirtualSX1262 gChip;
 //  MESHCORE_RADIO_TRACE=1 logs every SPI transaction. Off by default: this is
 //  on the hot path of every byte.
 const bool gTracing = getenv("MESHCORE_RADIO_TRACE") != nullptr;
+
+// Seed for this chip's receiver noise, set per node by whoever starts us.
+//
+// Firmware takes its entropy from the radio - RadioLib reads the instantaneous
+// RSSI eight times for a random byte, and MeshCore seeds its PRNG from that and
+// derives its identity from the PRNG. One stream per node, or every node comes
+// up with the same keypair. Seeded rather than sampled so a run stays
+// reproducible.
+uint64_t noiseSeedFromEnv() {
+  const char* e = getenv("MESHBENCH_NOISE_SEED");
+  if (e == nullptr) return 0;
+  return strtoull(e, nullptr, 10);
+}
 std::vector<uint8_t> gTrace;
 std::mutex gChipMu;          // QEMU and the engine both reach the chip
 uint32_t gSimMillis = 0;
@@ -328,7 +342,13 @@ bool serviceQemu(sock_t fd, uint64_t* transactions, uint64_t* bytes) {
       //  nRF52, so when one of them fails to bring its radio up, a diff of the
       //  three traces says which command got an answer it did not like.
       if (gTracing && !gTrace.empty()) {
-        fprintf(stderr, "spi:");
+        // Timestamped, because the question a trace gets asked is almost always
+        // "what did the firmware do after DIO1 went high", and an unstamped
+        // list of commands cannot be lined up against anything - not the pin,
+        // not the chip's own state, not the engine's events.
+        fprintf(stderr, "[%llu] spi:",
+                (unsigned long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
         for (size_t i = 0; i < gTrace.size() && i < 24; i++) {
           fprintf(stderr, " %02x", gTrace[i]);
         }
@@ -383,6 +403,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   const char* path = argv[1];
+  gChip.setNoiseSeed(noiseSeedFromEnv());
   std::string bridgeAddr;
   for (int i = 2; i < argc - 1; i++) {
     if (strcmp(argv[i], "--bridge") == 0) bridgeAddr = argv[i + 1];
@@ -517,6 +538,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Frames the chip was handed while it was not listening and did not come
+  // back for in time. Reported because it is invisible otherwise and it accuses
+  // this side rather than the firmware: a node that hears everything and
+  // forwards nothing looks identical whether the packets reached the driver or
+  // were binned here.
+  printf("radioserver: %u frames dropped into a deaf receiver\n",
+         gChip.framesDropped());
   printf("radioserver: %llu transactions, %llu bytes\n",
          (unsigned long long)transactions, (unsigned long long)bytes);
   if (bridgeFd != BAD_SOCK) CLOSE_SOCK(bridgeFd);
