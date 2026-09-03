@@ -46,6 +46,9 @@ if [ ! -f "$vsx/src/VirtualSX1262.cpp" ]; then
   echo "build.sh: vendor/virtual-sx1262 is empty; run: git submodule update --init" >&2
   exit 1
 fi
+# Globbed rather than listed, so the library splitting a file does not break
+# this build with an undefined symbol in a repository its author is not in.
+vsx_src=("$vsx"/src/*.cpp)
 src="${MESHCORE:-}/examples/$role"
 if [ "$role" != radioserver ]; then
   [ -d "$src" ] || { echo "no such role: $role (looked in $MESHCORE/examples)" >&2; exit 2; }
@@ -103,7 +106,7 @@ if [ "$role" = radioserver ]; then
   bin="$out/radioserver-$os-$arch$exe"
   rs_flags=("${STD:--std=c++17}" -O2 -w ${extra_flags[@]+"${extra_flags[@]}"})
   rs_objs=()
-  for f in "$vsx/src/VirtualSX1262.cpp" "$root/bridge/radioserver.cpp"; do
+  for f in "${vsx_src[@]}" "$root/bridge/radioserver.cpp"; do
     o="$obj/$(basename "${f%.cpp}").o"
     if ! "$CXX" "${rs_flags[@]}" -I "$variant" -I "$vsx/src" -c "$f" -o "$o"; then
       echo "build.sh: radioserver: $(basename "$f") did not compile for $os/$arch" >&2
@@ -213,7 +216,7 @@ done
 # Test programs in the variant directory are skipped: they carry their own
 # main(), so linking one into a role produces "multiple definition of main" and
 # takes down every role at once, which reads as the role not porting.
-for f in "$variant"/*.cpp "$vsx/src/VirtualSX1262.cpp" "$root/bridge/main.cpp"; do
+for f in "$variant"/*.cpp "${vsx_src[@]}" "$root/bridge/main.cpp"; do
   case "$(basename "$f")" in *_test.cpp) continue ;; esac
   o="$obj/$(basename "${f%.cpp}").o"
   # The bridge is the one file that includes windows.h - through winsock2.h -
