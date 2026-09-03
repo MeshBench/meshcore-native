@@ -420,7 +420,8 @@ jobs:
             echo
             echo "Not versioned against upstream MeshCore: this is ours, has no role,"
             echo "and moves independently of the per-role releases. Wants neither a"
-            echo "MeshCore checkout nor Crypto - just \`VirtualSX1262.cpp\` beside it."
+            echo "MeshCore checkout nor Crypto, just the chip model in"
+            echo "\`vendor/virtual-sx1262\`."
             echo
             for f in "${assets[@]}"; do echo "- \`$(basename "$f")\`"; done
           } > notes.md
