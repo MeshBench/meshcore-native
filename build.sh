@@ -49,6 +49,12 @@ fi
 # Globbed rather than listed, so the library splitting a file does not break
 # this build with an undefined symbol in a repository its author is not in.
 vsx_src=("$vsx"/src/*.cpp)
+# Both of the model's include roots. src/ holds the C++ class the host variant
+# uses directly; include/ holds the C ABI, which abi.cpp needs and which the glob
+# above therefore drags in. Carrying the ABI in these binaries costs a few
+# unreferenced symbols and means radioserver already exports the surface QEMU and
+# Renode link against.
+vsx_inc=(-I "$vsx/src" -I "$vsx/include")
 src="${MESHCORE:-}/examples/$role"
 if [ "$role" != radioserver ]; then
   [ -d "$src" ] || { echo "no such role: $role (looked in $MESHCORE/examples)" >&2; exit 2; }
@@ -108,7 +114,7 @@ if [ "$role" = radioserver ]; then
   rs_objs=()
   for f in "${vsx_src[@]}" "$root/bridge/radioserver.cpp"; do
     o="$obj/$(basename "${f%.cpp}").o"
-    if ! "$CXX" "${rs_flags[@]}" -I "$variant" -I "$vsx/src" -c "$f" -o "$o"; then
+    if ! "$CXX" "${rs_flags[@]}" -I "$variant" "${vsx_inc[@]}" -c "$f" -o "$o"; then
       echo "build.sh: radioserver: $(basename "$f") did not compile for $os/$arch" >&2
       exit 1
     fi
@@ -130,7 +136,7 @@ bin="$out/meshcore-$role-$os-$arch$exe"
 # so MeshCore's own radio driver runs against the library it was written for
 # rather than against a stand-in of ours.
 radiolib="$root/vendor/RadioLib/src"
-inc=(-I "$variant" -I "$vsx/src" -I "$MESHCORE/src" -I "$src" -I "$CRYPTO" -I "$MESHCORE/lib/ed25519" -I "$radiolib")
+inc=(-I "$variant" "${vsx_inc[@]}" -I "$MESHCORE/src" -I "$src" -I "$CRYPTO" -I "$MESHCORE/lib/ed25519" -I "$radiolib")
 # -O2, not -Os: this build exists to be fast, and it is also the build whose
 # results get compared against the emulated one. Optimisation level is exactly
 # the kind of difference that would make that comparison meaningless if it
