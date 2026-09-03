@@ -1,0 +1,46 @@
+# What a pull request here is checked against.
+#
+# build.yml only ever ran on a tag or a button, so nothing verified a change
+# before it landed. That is how a change to build.sh and a new submodule reached
+# a merge with no evidence they compiled: the guard in build.sh would have said
+# so loudly, but only on the next release, which is the wrong moment to find out.
+#
+# Deliberately one platform and one role. radioserver is the whole of what this
+# repository adds around the vendored chip model - the model itself, the bridge's
+# socket, and the build wiring - and it needs no MeshCore checkout, so it
+# compiles in about a minute. Cross-compiling for four platforms is the release's
+# job, not a reviewer's.
+name: pull request
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  radioserver:
+    name: radioserver compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The SX1262 model lives in MeshBench/virtual-sx1262. Without this the
+          # checkout is a bare gitlink and there is nothing to compile.
+          submodules: recursive
+
+      - name: The submodule is actually here
+        run: |
+          set -euo pipefail
+          # Checked separately from the build so an empty submodule reads as an
+          # empty submodule rather than as a compile error in a missing file.
+          test -f vendor/virtual-sx1262/src/VirtualSX1262.cpp
+          echo "vendor/virtual-sx1262 at $(git -C vendor/virtual-sx1262 rev-parse --short HEAD)"
+
+      - name: Build radioserver
+        run: ./build.sh radioserver out
+
+      - name: It is an executable, not an empty file
+        run: |
+          set -euo pipefail
+          bin=$(find out -name 'radioserver-*' -type f)
+          test -x "$bin"
+          file "$bin"

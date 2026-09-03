@@ -156,6 +156,11 @@ jobs:
     if: needs.discover.outputs.any == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The SX1262 model is a submodule now. Without this the
+          # checkout is a bare gitlink and build.sh stops on its own
+          # guard, which is the loud failure but still a failure.
+          submodules: recursive
 
       - name: Toolchain
         if: matrix.target.apt != ''
@@ -338,6 +343,11 @@ jobs:
     runs-on: ${{ matrix.target.runs_on }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The SX1262 model is a submodule now. Without this the
+          # checkout is a bare gitlink and build.sh stops on its own
+          # guard, which is the loud failure but still a failure.
+          submodules: recursive
 
       - name: Toolchain
         if: matrix.target.apt != ''
