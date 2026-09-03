@@ -20,10 +20,6 @@ on:
         description: 'Rebuild even if a release already exists'
         type: boolean
         default: false
-      radioserver_only:
-        description: 'Publish only radioserver, skipping every firmware role'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -36,12 +32,6 @@ env:
   # missing two thirds of its matrix every night is noise rather than signal.
   # Widen it with the PLATFORMS repository variable, no commit needed.
   PLATFORMS: ${{ vars.PLATFORMS || 'linux-amd64' }}
-  # radioserver builds for platforms a node binary cannot. It is one translation
-  # unit against VirtualSX1262 with no Arduino shims and no Crypto, so the
-  # Windows and macOS builds that MSIM-44 blocks for firmware work here today —
-  # which matters, because an operator on a Mac needs this one piece even when
-  # every node they run is a Linux binary under emulation.
-  RADIOSERVER_PLATFORMS: ${{ vars.RADIOSERVER_PLATFORMS || 'linux-amd64 darwin-arm64 windows-amd64' }}
 
 jobs:
   discover:
@@ -51,7 +41,6 @@ jobs:
       any: ${{ steps.plan.outputs.any }}
       backlog: ${{ steps.plan.outputs.backlog }}
       targets: ${{ steps.targets.outputs.targets }}
-      rs_targets: ${{ steps.targets.outputs.rs_targets }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,11 +56,6 @@ jobs:
             '[.[] | select(.id as $id | ($want | split(" ")) | index($id))]' platforms.json)
           echo "targets=$live" >> "$GITHUB_OUTPUT"
           echo "building for: $(printf '%s' "$live" | jq -r '[.[].id] | join(", ")')"
-
-          rs=$(jq -c --arg want "$RADIOSERVER_PLATFORMS" \
-            '[.[] | select(.id as $id | ($want | split(" ")) | index($id))]' platforms.json)
-          echo "rs_targets=$rs" >> "$GITHUB_OUTPUT"
-          echo "radioserver for: $(printf '%s' "$rs" | jq -r '[.[].id] | join(", ")')"
 
       - name: Work out what still needs building
         id: plan
@@ -157,11 +141,7 @@ jobs:
     runs-on: ${{ matrix.target.runs_on }}
     # A platform not in PLATFORMS is skipped, not removed: the entry above is
     # still the record of how it is built.
-    # radioserver versions a wire protocol and is cut on its own schedule, so
-    # publishing one must not drag every upstream ref for every platform along
-    # with it: that is an hour of runners and a lot of ways to fail, for a
-    # change to one translation unit.
-    if: needs.discover.outputs.any == 'true' && !inputs.radioserver_only
+    if: needs.discover.outputs.any == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -259,7 +239,6 @@ jobs:
     needs: [discover, build]
     if: >-
       !cancelled() && needs.discover.outputs.any == 'true'
-      && !inputs.radioserver_only
       && contains(fromJSON('["success", "failure"]'), needs.build.result)
     runs-on: ubuntu-latest
     strategy:
@@ -335,117 +314,6 @@ jobs:
 
   # Chaining is off with the schedule: an unattended loop is only wanted once a
   # run cannot damage what is already published.
-  # radioserver is ours, not upstream's: no MeshCore checkout, no role, and a
-  # version that moves with this repository rather than with a MeshCore tag.
-  # That is why it is its own job and its own release - the discover job above
-  # reasons entirely about upstream refs and has nothing to say about whether
-  # this needs building.
-  #
-  # It is built on every run rather than on a change to it, because it is one
-  # compile of two files and deciding would cost more than doing.
-  radioserver:
-    needs: discover
-    strategy:
-      fail-fast: false
-      matrix:
-        target: ${{ fromJSON(needs.discover.outputs.rs_targets) }}
-    runs-on: ${{ matrix.target.runs_on }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # The SX1262 model is a submodule now. Without this the
-          # checkout is a bare gitlink and build.sh stops on its own
-          # guard, which is the loud failure but still a failure.
-          submodules: recursive
-
-      - name: Toolchain
-        if: matrix.target.apt != ''
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.target.apt }}
-
-      - name: LLVM-MinGW for Windows on ARM
-        if: matrix.target.llvm_mingw
-        run: |
-          set -euo pipefail
-          url=https://github.com/mstorsjo/llvm-mingw/releases/download/20250910/llvm-mingw-20250910-ucrt-ubuntu-22.04-x86_64.tar.xz
-          curl -fsSL "$url" | tar -xJ
-          echo "$PWD/llvm-mingw-20250910-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
-
-      - name: Build radioserver
-        env:
-          CXX: ${{ matrix.target.cxx }}
-          CC: ${{ matrix.target.cc }}
-          EXTRA_FLAGS: ${{ matrix.target.extra }}
-        run: |
-          set -euo pipefail
-          os=${{ matrix.target.id }}; os=${os%%-*}
-          arch=${{ matrix.target.id }}; arch=${arch##*-}
-          export TARGET_OS=$os TARGET_ARCH=$arch
-          ./build.sh radioserver out
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radioserver--${{ matrix.target.id }}
-          path: out/radioserver-*
-          if-no-files-found: error
-
-  publish-radioserver:
-    needs: radioserver
-    # Every leg must have produced a binary. Unlike a role, which legitimately
-    # does not exist on some upstream refs, radioserver is one file that either
-    # compiles for a platform or is broken for it - and a release missing the
-    # macOS binary silently strands every Mac operator on the previous protocol.
-    if: ${{ !cancelled() && needs.radioserver.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: radioserver--*
-          path: dist
-          merge-multiple: true
-
-      - name: Release radioserver
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          tag="radioserver-v$(cat radioserver.version)"
-
-          assets=(dist/radioserver-*)
-          [ ${#assets[@]} -gt 0 ] || { echo "::error::no radioserver binaries"; exit 1; }
-          ( cd dist && sha256sum radioserver-* > SHA256SUMS )
-
-          # The version is a file in this repository, bumped by hand, because
-          # what it versions is a wire protocol rather than a build. QEMU speaks
-          # it and the simulator reads what comes back, so a radioserver that
-          # gained a command is not the same thing as one that did not - and the
-          # two ends have to be able to say which they need.
-          {
-            echo "The SX1262 radio model every emulated node clocks over a socket."
-            echo
-            echo "radioserver-commit: ${{ github.sha }}"
-            echo
-            echo "Not versioned against upstream MeshCore: this is ours, has no role,"
-            echo "and moves independently of the per-role releases. Wants neither a"
-            echo "MeshCore checkout nor Crypto, just the chip model in"
-            echo "\`vendor/virtual-sx1262\`."
-            echo
-            for f in "${assets[@]}"; do echo "- \`$(basename "$f")\`"; done
-          } > notes.md
-
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
-            for a in $(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); do
-              gh release delete-asset "$tag" "$a" --repo "$GITHUB_REPOSITORY" --yes
-            done
-          else
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-              --title "radioserver v$(cat radioserver.version) (native)" --notes-file notes.md
-          fi
-          gh release upload "$tag" dist/radioserver-* dist/SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --clobber
 
   continue:
     if: false # was: !cancelled() && needs.discover.outputs.backlog != '0'

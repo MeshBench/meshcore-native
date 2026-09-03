@@ -26,14 +26,9 @@ if [ -z "$role" ]; then
   echo "usage: MESHCORE=... CRYPTO=... $0 <role> [outdir]" >&2
   exit 2
 fi
-# The radio model is ours rather than a MeshCore application: it carries its own
-# main() and opens neither MeshCore nor Crypto. Demanding two checkouts it never
-# reads would make the one build an emulator-only packaging job needs the most
-# awkward one to ask for.
-if [ "$role" != radioserver ]; then
-  : "${MESHCORE:?set MESHCORE to a MeshCore checkout}"
-  : "${CRYPTO:?set CRYPTO to arduinolibs/libraries/Crypto}"
-fi
+
+: "${MESHCORE:?set MESHCORE to a MeshCore checkout}"
+: "${CRYPTO:?set CRYPTO to arduinolibs/libraries/Crypto}"
 
 root=$(cd "$(dirname "$0")" && pwd)
 variant="$root/variants/host"
@@ -52,13 +47,11 @@ vsx_src=("$vsx"/src/*.cpp)
 # Both of the model's include roots. src/ holds the C++ class the host variant
 # uses directly; include/ holds the C ABI, which abi.cpp needs and which the glob
 # above therefore drags in. Carrying the ABI in these binaries costs a few
-# unreferenced symbols and means radioserver already exports the surface QEMU and
-# Renode link against.
+# unreferenced symbols, and it keeps this build honest: a node here links the
+# same model the emulators load, from the same commit.
 vsx_inc=(-I "$vsx/src" -I "$vsx/include")
-src="${MESHCORE:-}/examples/$role"
-if [ "$role" != radioserver ]; then
-  [ -d "$src" ] || { echo "no such role: $role (looked in $MESHCORE/examples)" >&2; exit 2; }
-fi
+src="$MESHCORE/examples/$role"
+[ -d "$src" ] || { echo "no such role: $role (looked in $MESHCORE/examples)" >&2; exit 2; }
 
 # The target, which is not necessarily this machine. Windows and 32-bit builds
 # are produced by cross-compilers on a Linux runner, so os/arch are inputs with
@@ -97,35 +90,6 @@ if [ "$os" = windows ]; then
 fi
 if [ ${#extra_flags[@]} -gt 0 ]; then
   extra_link+=(${extra_flags[@]+"${extra_flags[@]}"})
-fi
-
-# The radio model, which every emulated node needs and no native one does.
-#
-# Built from this tree rather than from the simulator's packaging because the
-# chip model lives here: an emulated node and a native one have to be the same
-# VirtualSX1262, and compiling both from one checkout is the cheapest way to
-# keep them that. It reaches nothing else - no MeshCore, no Crypto, no RadioLib
-# - so it is two objects and a link rather than the sweep below.
-if [ "$role" = radioserver ]; then
-  obj="$out/obj/radioserver"
-  mkdir -p "$obj"
-  bin="$out/radioserver-$os-$arch$exe"
-  rs_flags=("${STD:--std=c++17}" -O2 -w ${extra_flags[@]+"${extra_flags[@]}"})
-  rs_objs=()
-  for f in "${vsx_src[@]}" "$root/bridge/radioserver.cpp"; do
-    o="$obj/$(basename "${f%.cpp}").o"
-    if ! "$CXX" "${rs_flags[@]}" -I "$variant" "${vsx_inc[@]}" -c "$f" -o "$o"; then
-      echo "build.sh: radioserver: $(basename "$f") did not compile for $os/$arch" >&2
-      exit 1
-    fi
-    rs_objs+=("$o")
-  done
-  if ! "$CXX" -o "$bin" "${rs_objs[@]}" ${extra_link[@]+"${extra_link[@]}"}; then
-    echo "build.sh: radioserver does not link for $os/$arch" >&2
-    exit 3
-  fi
-  echo "$bin"
-  exit 0
 fi
 
 obj="$out/obj/$role"

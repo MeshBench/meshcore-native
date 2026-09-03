@@ -8,8 +8,12 @@ compiled **unmodified**; everything this repository adds is the host variant in
 
 The SX1262 model is no longer here. It is
 [MeshBench/virtual-sx1262](https://github.com/MeshBench/virtual-sx1262), MIT,
-vendored as a submodule at `vendor/virtual-sx1262`, because QEMU and Renode need
-the same chip and a second copy of a chip model drifts.
+vendored as a submodule at `vendor/virtual-sx1262` and compiled into these
+binaries. QEMU and Renode load the same model from that repository's own
+releases, so a node built here and an emulated board are the same chip from the
+same commit: two copies of a chip model drift, and the moment they do, a
+comparison between a native node and an emulated one is measuring our code
+rather than MeshCore's.
 
 The commit each release was built from is recorded in that release's body.
 
