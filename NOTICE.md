@@ -6,6 +6,11 @@ licensed, copyright Scott Powell / rippleradios.com. Their applications are
 compiled **unmodified**; everything this repository adds is the host variant in
 `variants/host/` and the bridge in `bridge/`, also MIT.
 
+The SX1262 model is no longer here. It is
+[MeshBench/virtual-sx1262](https://github.com/MeshBench/virtual-sx1262), MIT,
+vendored as a submodule at `vendor/virtual-sx1262`, because QEMU and Renode need
+the same chip and a second copy of a chip model drifts.
+
 The commit each release was built from is recorded in that release's body.
 
 Third-party code compiled in:

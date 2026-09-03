@@ -25,7 +25,7 @@ Worth being exact about, because the interesting bugs live on the boundary.
 | MeshCore application and mesh logic | **real**, unmodified |
 | MeshCore radio driver — `CustomSX1262`, `RadioLibWrapper` | **real**, unmodified |
 | RadioLib 7.6.0 — the version MeshCore pins | **real**, vendored in `vendor/`, unmodified |
-| The SX1262 chip | **ours** — `variants/host/VirtualSX1262` |
+| The SX1262 chip | **ours**, `vendor/virtual-sx1262` (shared with QEMU and Renode) |
 | Arduino, board, filesystem, RTC, sensors, RNG | **ours** — `variants/host/` |
 | The air | whatever drives the bridge |
 
