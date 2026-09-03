@@ -37,6 +37,24 @@ fi
 
 root=$(cd "$(dirname "$0")" && pwd)
 variant="$root/variants/host"
+# The SX1262 model is shared with QEMU, Renode and the simulator, so it lives
+# in its own repository rather than in this variant. A submodule keeps one copy
+# and one history: two copies of a chip model drift, and the moment they do a
+# native node and an emulated one stop being comparable.
+vsx="$root/vendor/virtual-sx1262"
+if [ ! -f "$vsx/src/VirtualSX1262.cpp" ]; then
+  echo "build.sh: vendor/virtual-sx1262 is empty; run: git submodule update --init" >&2
+  exit 1
+fi
+# Globbed rather than listed, so the library splitting a file does not break
+# this build with an undefined symbol in a repository its author is not in.
+vsx_src=("$vsx"/src/*.cpp)
+# Both of the model's include roots. src/ holds the C++ class the host variant
+# uses directly; include/ holds the C ABI, which abi.cpp needs and which the glob
+# above therefore drags in. Carrying the ABI in these binaries costs a few
+# unreferenced symbols and means radioserver already exports the surface QEMU and
+# Renode link against.
+vsx_inc=(-I "$vsx/src" -I "$vsx/include")
 src="${MESHCORE:-}/examples/$role"
 if [ "$role" != radioserver ]; then
   [ -d "$src" ] || { echo "no such role: $role (looked in $MESHCORE/examples)" >&2; exit 2; }
@@ -94,9 +112,9 @@ if [ "$role" = radioserver ]; then
   bin="$out/radioserver-$os-$arch$exe"
   rs_flags=("${STD:--std=c++17}" -O2 -w ${extra_flags[@]+"${extra_flags[@]}"})
   rs_objs=()
-  for f in "$variant/VirtualSX1262.cpp" "$root/bridge/radioserver.cpp"; do
+  for f in "${vsx_src[@]}" "$root/bridge/radioserver.cpp"; do
     o="$obj/$(basename "${f%.cpp}").o"
-    if ! "$CXX" "${rs_flags[@]}" -I "$variant" -c "$f" -o "$o"; then
+    if ! "$CXX" "${rs_flags[@]}" -I "$variant" "${vsx_inc[@]}" -c "$f" -o "$o"; then
       echo "build.sh: radioserver: $(basename "$f") did not compile for $os/$arch" >&2
       exit 1
     fi
@@ -118,7 +136,7 @@ bin="$out/meshcore-$role-$os-$arch$exe"
 # so MeshCore's own radio driver runs against the library it was written for
 # rather than against a stand-in of ours.
 radiolib="$root/vendor/RadioLib/src"
-inc=(-I "$variant" -I "$MESHCORE/src" -I "$src" -I "$CRYPTO" -I "$MESHCORE/lib/ed25519" -I "$radiolib")
+inc=(-I "$variant" "${vsx_inc[@]}" -I "$MESHCORE/src" -I "$src" -I "$CRYPTO" -I "$MESHCORE/lib/ed25519" -I "$radiolib")
 # -O2, not -Os: this build exists to be fast, and it is also the build whose
 # results get compared against the emulated one. Optimisation level is exactly
 # the kind of difference that would make that comparison meaningless if it
@@ -204,7 +222,7 @@ done
 # Test programs in the variant directory are skipped: they carry their own
 # main(), so linking one into a role produces "multiple definition of main" and
 # takes down every role at once, which reads as the role not porting.
-for f in "$variant"/*.cpp "$root/bridge/main.cpp"; do
+for f in "$variant"/*.cpp "${vsx_src[@]}" "$root/bridge/main.cpp"; do
   case "$(basename "$f")" in *_test.cpp) continue ;; esac
   o="$obj/$(basename "${f%.cpp}").o"
   # The bridge is the one file that includes windows.h - through winsock2.h -

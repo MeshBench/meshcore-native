@@ -1,0 +1,3 @@
+[submodule "vendor/virtual-sx1262"]
+	path = vendor/virtual-sx1262
+	url = https://github.com/MeshBench/virtual-sx1262.git
