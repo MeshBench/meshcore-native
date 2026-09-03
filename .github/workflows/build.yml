@@ -20,6 +20,10 @@ on:
         description: 'Rebuild even if a release already exists'
         type: boolean
         default: false
+      radioserver_only:
+        description: 'Publish only radioserver, skipping every firmware role'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -153,7 +157,11 @@ jobs:
     runs-on: ${{ matrix.target.runs_on }}
     # A platform not in PLATFORMS is skipped, not removed: the entry above is
     # still the record of how it is built.
-    if: needs.discover.outputs.any == 'true'
+    # radioserver versions a wire protocol and is cut on its own schedule, so
+    # publishing one must not drag every upstream ref for every platform along
+    # with it: that is an hour of runners and a lot of ways to fail, for a
+    # change to one translation unit.
+    if: needs.discover.outputs.any == 'true' && !inputs.radioserver_only
     steps:
       - uses: actions/checkout@v4
         with:
@@ -251,6 +259,7 @@ jobs:
     needs: [discover, build]
     if: >-
       !cancelled() && needs.discover.outputs.any == 'true'
+      && !inputs.radioserver_only
       && contains(fromJSON('["success", "failure"]'), needs.build.result)
     runs-on: ubuntu-latest
     strategy:
@@ -420,7 +429,8 @@ jobs:
             echo
             echo "Not versioned against upstream MeshCore: this is ours, has no role,"
             echo "and moves independently of the per-role releases. Wants neither a"
-            echo "MeshCore checkout nor Crypto - just \`VirtualSX1262.cpp\` beside it."
+            echo "MeshCore checkout nor Crypto, just the chip model in"
+            echo "\`vendor/virtual-sx1262\`."
             echo
             for f in "${assets[@]}"; do echo "- \`$(basename "$f")\`"; done
           } > notes.md
