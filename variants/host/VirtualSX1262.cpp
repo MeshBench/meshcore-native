@@ -135,11 +135,25 @@ void VirtualSX1262::tick(uint64_t nowMs) {
 void VirtualSX1262::setChannelBusy(bool busy) {
   if (busy && !channelBusy_) busySinceMs_ = nowMs_;
   if (!busy) {
-    // The air went quiet. The flags stay set until the firmware clears them,
-    // which is deliberate: a real SX1262 latches them, and coping with a flag
-    // that outlives the signal is precisely what MeshCore's driver does.
+    // The air went quiet: the signal that raised the preamble/header detection
+    // flags is gone, so a well-behaved chip's detection state clears with it.
+    // RxDone stays - that is a completed packet the firmware still has to read -
+    // but the "a carrier is present" flags must not outlive the carrier, or the
+    // driver's own channel-activity check (CustomSX1262::isReceiving reads
+    // HEADER_VALID) reports the air busy for the ~4 s it takes that check to time
+    // the stale flag out. On a mesh whose adverts arrive every few seconds that
+    // window never closes, and a repeater that has a packet to forward never
+    // sees a clear channel to send it on - which is why an emulated board
+    // received every advert and relayed none.
+    //
+    // The deliberately-misbehaving STUCK_IRQ variant is exempt: leaving its
+    // flags latched past the signal is the whole point of it, because that is
+    // the real "4 second lock-up" MeshCore 1.17's driver exists to recover from.
     preambleRaised_ = false;
     headerRaised_ = false;
+    if (stuckIrqMs_ == 0) {
+      irq_ &= (uint16_t)~(kIrqPreambleDetected | kIrqHeaderValid | kIrqSyncWordValid);
+    }
   }
   channelBusy_ = busy;
 }
