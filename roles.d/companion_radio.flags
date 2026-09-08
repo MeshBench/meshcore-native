@@ -1,5 +1,19 @@
-# The companion holds group channels, and its command frame reports the
-# capacity unconditionally. 40 is what upstream's flash-equipped variants
-# use; a host has no such limit, so the number is a protocol constant here
-# rather than a hardware one.
+# These size arrays inside MeshCore's shared base classes (BaseChatMesh), and
+# so must be identical in every translation unit or the layout of that base
+# object differs between them: a field written through one .cpp is read at
+# another's offset, silently. The companion's own MyMesh.h raises both above
+# BaseChatMesh's defaults, and platformio passes the raised values to the whole
+# build; this host build compiles each file on its own, so the values that only
+# a header sets reach MyMesh.cpp and not BaseChatMesh.cpp. They are pinned here
+# to reach both.
+#
+# MAX_GROUP_CHANNELS the companion also reports as a capacity in its command
+# frame; 40 is what upstream's flash-equipped variants use, and a host has no
+# such limit, so it is a protocol constant here rather than a hardware one.
+#
+# MAX_CONTACTS was missed, and the cost was exact: a companion loaded its
+# contacts at boot and reported none to any client, because BaseChatMesh.cpp
+# (default 32) and MyMesh.cpp (100) disagreed on where num_contacts lived, so
+# a contact added under one layout was invisible under the other.
 -DMAX_GROUP_CHANNELS=40
+-DMAX_CONTACTS=100
