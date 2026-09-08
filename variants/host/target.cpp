@@ -58,7 +58,7 @@ int g_cr = 1;
 // reproducible from its seed, and a hardware RNG is the one thing that cannot
 // be — so the seam that would ordinarily be RadioNoiseListener is the seam
 // where determinism gets injected.
-uint32_t g_identity_seed = 4417;
+uint64_t g_identity_seed = 4417;
 
 bool radio_init() {
   // std_init walks RadioLib's begin(): calibration, TCXO, the modem
