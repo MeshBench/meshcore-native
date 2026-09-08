@@ -56,7 +56,7 @@ int g_stuck_irq_ms = 0;
 extern int g_sf;
 extern float g_bwKHz;
 extern int g_cr;
-extern uint32_t g_identity_seed;
+extern uint64_t g_identity_seed;
 
 namespace {
 
@@ -175,7 +175,12 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; i++) {
     auto next = [&]() { return i + 1 < argc ? argv[++i] : ""; };
     if (!strcmp(argv[i], "--bridge")) bridge = next();
-    else if (!strcmp(argv[i], "--seed")) g_identity_seed = (uint32_t)strtoul(next(), nullptr, 10);
+    // strtoull, and the whole of it. strtoul saturates at ULONG_MAX where a
+    // long is 32 bits - every Windows target - so a seed above 2^32 came in
+    // as 0xFFFFFFFF, and every node of a run but the first booted with one
+    // identity. The simulator sends a value that fits in 32 bits either way,
+    // so a seed it sends means the same thing on every platform.
+    else if (!strcmp(argv[i], "--seed")) g_identity_seed = strtoull(next(), nullptr, 10);
     else if (!strcmp(argv[i], "--sf")) g_sf = atoi(next());
     else if (!strcmp(argv[i], "--bw-khz")) g_bwKHz = (float)atof(next());
     else if (!strcmp(argv[i], "--cr")) g_cr = atoi(next());
