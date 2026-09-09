@@ -53,6 +53,15 @@ void loop();
 // Defined by the host variant.
 extern uint32_t g_sim_millis;
 int g_stuck_irq_ms = 0;
+// The receiver-noise stream the chip model draws from. Distinct per node so
+// two nodes do not read the same "random" bytes at the same instants - which
+// is what seeds each node's RNG, its CSMA backoff and its advert jitter. Left
+// at 0 the whole mesh drew one stream and every node's timing was correlated.
+// Defaults to the identity seed, which the simulator already makes distinct
+// per node, so a node differs without the simulator having to send anything;
+// XORed so it is not literally the number the keypair is also derived from.
+uint64_t g_noise_seed = 0;
+bool g_noise_seed_set = false;
 extern int g_sf;
 extern float g_bwKHz;
 extern int g_cr;
@@ -181,6 +190,7 @@ int main(int argc, char** argv) {
     // identity. The simulator sends a value that fits in 32 bits either way,
     // so a seed it sends means the same thing on every platform.
     else if (!strcmp(argv[i], "--seed")) g_identity_seed = strtoull(next(), nullptr, 10);
+    else if (!strcmp(argv[i], "--noise-seed")) { g_noise_seed = strtoull(next(), nullptr, 10); g_noise_seed_set = true; }
     else if (!strcmp(argv[i], "--sf")) g_sf = atoi(next());
     else if (!strcmp(argv[i], "--bw-khz")) g_bwKHz = (float)atof(next());
     else if (!strcmp(argv[i], "--cr")) g_cr = atoi(next());
@@ -217,6 +227,10 @@ int main(int argc, char** argv) {
   // Only if asked for on the command line. A build compiled as a faulty
   // variant already has its value, and overwriting it with the flag default
   // silently turned that whole variant back into a well-behaved one.
+  // Per-node receiver noise, so the mesh does not run on one shared stream.
+  sim_hal.chip().setNoiseSeed(g_noise_seed_set ? g_noise_seed
+                                               : (g_identity_seed ^ 0x9E3779B97F4A7C15ULL));
+
   if (g_stuck_irq_ms > 0) sim_hal.chip().setStuckIrqMs((uint32_t)g_stuck_irq_ms);
   setup();
   drainTx();
