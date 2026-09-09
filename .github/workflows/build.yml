@@ -27,10 +27,15 @@ permissions:
 
 env:
   UPSTREAM: meshcore-dev/MeshCore
-  # Which platforms to publish. Only linux-amd64 is live: the Windows and macOS
-  # cross-builds do not compile yet (MSIM-44), and shipping a release that is
-  # missing two thirds of its matrix every night is noise rather than signal.
-  # Widen it with the PLATFORMS repository variable, no commit needed.
+  # Which platforms to publish. All three cross-build today for the MeshCore
+  # versions that matter - the v1.17.x native releases carry linux-amd64,
+  # darwin-arm64 and windows-amd64 - and the PLATFORMS repository variable is
+  # set to all three, so that is what a release carries. Old MeshCore tags that
+  # predate the host port still fail the two cross-targets, and that is
+  # expected: their release keeps whatever built. The fallback stays at
+  # linux-amd64, the one target needing no cross toolchain, so a fork with the
+  # variable unset publishes something rather than failing on two it was never
+  # set up for.
   PLATFORMS: ${{ vars.PLATFORMS || 'linux-amd64' }}
 
 jobs:
