@@ -48,10 +48,7 @@
   },
   {
     "id": "darwin-arm64",
-    "runs_on": [
-      "self-hosted",
-      "macos-m4"
-    ],
+    "runs_on": "macos-14",
     "cxx": "clang++",
     "cc": "clang"
   }
