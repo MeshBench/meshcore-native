@@ -338,7 +338,7 @@ int main(int argc, char** argv) {
           // make every comparison between them a comparison of our own code.
           auto& c = sim_hal.chip();
           uint32_t st[4] = {c.irqReads(), c.busyReads(), c.busyMs(), c.spuriousRaises()};
-          uint8_t sb[37];
+          uint8_t sb[47];
           for (int k = 0; k < 4; k++) {
             sb[k*4+0] = (uint8_t)(st[k] >> 24); sb[k*4+1] = (uint8_t)(st[k] >> 16);
             sb[k*4+2] = (uint8_t)(st[k] >> 8);  sb[k*4+3] = (uint8_t)st[k];
@@ -369,6 +369,16 @@ int main(int argc, char** argv) {
           // the engine would dock every native node on a board that has a
           // module for a fault it did not have.
           sb[36] = 0;
+          // The emulator's tail, so the two writers stay one shape: the DIO1
+          // mask, then the console's line rate, which is zero because a native
+          // node's console is a socket rather than a UART.
+          put16(37, c.dio1Mask());
+          put32(39, 0);
+          // Events the firmware's IrqMask kept out of the status register.
+          // A masked event is silence, and silence reads exactly like a quiet
+          // channel, so without this count a firmware that never enabled
+          // PREAMBLE_DETECTED and one that never heard a preamble look alike.
+          put32(43, c.irqSuppressed());
           writeMsg(gFd, kRadioStats, sb, sizeof(sb));
         }
         if (!writeMsg(gFd, kAck, payload.data(), 4)) goto done;
