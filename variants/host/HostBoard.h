@@ -9,6 +9,10 @@
 #include <Mesh.h>
 #include <stdint.h>
 
+// Declared rather than included: KeyValueStore.h exists only from MeshCore
+// 1.18 on, and this header has to keep building the versions before it.
+class KeyValueStore;
+
 class HostBoard : public mesh::MainBoard {
  public:
   void begin() {}
@@ -32,6 +36,11 @@ class HostBoard : public mesh::MainBoard {
   // No thermal sensor. -128 is outside anything a working MCU reports, so a
   // reader sees an absent value rather than a cold day.
   float getMCUTemperature() { return -128.0f; }
+
+  // Every role hands the board its custom prefs at startup so a variant can
+  // read its own settings from them. A host has no board-specific settings,
+  // which is also what MeshCore's own nRF52, ESP32 and STM32 boards answer.
+  void attachDynamicPrefs(KeyValueStore*) {}
 };
 
 // HostRTCClock is wall time, which is what a repeater's RTC provides once it
