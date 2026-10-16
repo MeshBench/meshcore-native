@@ -80,6 +80,7 @@ constexpr uint8_t kConsoleOut = 0x07;  // bytes the node printed
 constexpr uint8_t kChannelBusy = 0x08; // is another station on the air here?
 constexpr uint8_t kRadioStats = 0x09;  // node -> host: what the chip has seen
 constexpr uint8_t kFrameFailed = 0x0A; // host -> node: a frame locked onto and lost
+constexpr uint8_t kCapFrameFailed = 0x01; // stats byte 47: this bridge takes kFrameFailed
 
 sock_t gFd = BAD_SOCK;
 std::deque<uint8_t> gConsoleIn;
@@ -347,7 +348,7 @@ int main(int argc, char** argv) {
           // make every comparison between them a comparison of our own code.
           auto& c = sim_hal.chip();
           uint32_t st[4] = {c.irqReads(), c.busyReads(), c.busyMs(), c.spuriousRaises()};
-          uint8_t sb[47];
+          uint8_t sb[48];
           for (int k = 0; k < 4; k++) {
             sb[k*4+0] = (uint8_t)(st[k] >> 24); sb[k*4+1] = (uint8_t)(st[k] >> 16);
             sb[k*4+2] = (uint8_t)(st[k] >> 8);  sb[k*4+3] = (uint8_t)st[k];
@@ -388,6 +389,11 @@ int main(int argc, char** argv) {
           // channel, so without this count a firmware that never enabled
           // PREAMBLE_DETECTED and one that never heard a preamble look alike.
           put32(43, c.irqSuppressed());
+          // What this bridge takes that an older one would hang up on. The
+          // engine sends kFrameFailed only to a node that says so here, because
+          // a bridge without that case ends its connection on a kind it does
+          // not know, and the engine cannot tell the two apart any other way.
+          sb[47] = kCapFrameFailed;
           writeMsg(gFd, kRadioStats, sb, sizeof(sb));
         }
         if (!writeMsg(gFd, kAck, payload.data(), 4)) goto done;
