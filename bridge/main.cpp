@@ -79,6 +79,7 @@ constexpr uint8_t kConsoleIn = 0x06;   // bytes typed at the node's UART
 constexpr uint8_t kConsoleOut = 0x07;  // bytes the node printed
 constexpr uint8_t kChannelBusy = 0x08; // is another station on the air here?
 constexpr uint8_t kRadioStats = 0x09;  // node -> host: what the chip has seen
+constexpr uint8_t kFrameFailed = 0x0A; // host -> node: a frame locked onto and lost
 
 sock_t gFd = BAD_SOCK;
 std::deque<uint8_t> gConsoleIn;
@@ -248,6 +249,14 @@ int main(int argc, char** argv) {
         // Queued, not delivered. The application collects it from recvRaw() on
         // its next loop, exactly as it would drain a real radio's FIFO.
         sim_hal.chip().inbox.push_back(std::move(payload));
+        break;
+
+      case kFrameFailed:
+        // The first byte is where it failed, as vsx_deliver_frame_failed numbers
+        // it: a header the receiver could not read is HeaderErr and nothing
+        // more, a payload it could not is RxDone beside CrcErr with the corrupt
+        // bytes in the buffer. Without this the firmware's error paths never run.
+        if (n >= 1) sim_hal.chip().deliverFrameFailed(payload.data() + 1, n - 1, payload[0]);
         break;
 
       case kTxDone:
