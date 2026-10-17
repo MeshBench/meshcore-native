@@ -53,6 +53,7 @@ void loop();
 // Defined by the host variant.
 extern uint32_t g_sim_millis;
 int g_stuck_irq_ms = 0;
+bool g_lenient_receive = false;
 // The receiver-noise stream the chip model draws from. Distinct per node so
 // two nodes do not read the same "random" bytes at the same instants - which
 // is what seeds each node's RNG, its CSMA backoff and its advert jitter. Left
@@ -201,6 +202,9 @@ int main(int argc, char** argv) {
     // without a way to reproduce it the difference between 1.16 and 1.17
     // cannot be observed at all.
     else if (!strcmp(argv[i], "--stuck-irq-ms")) g_stuck_irq_ms = atoi(next());
+    // The chip's inbox grace, back on: for reproducing a run made before this
+    // build received only what its receiver was listening for.
+    else if (!strcmp(argv[i], "--lenient-receive")) g_lenient_receive = true;
     else if (!strcmp(argv[i], "--print-airtime")) printAirtimeFor = atoi(next());
   }
 
@@ -234,6 +238,9 @@ int main(int argc, char** argv) {
                                                : (g_identity_seed ^ 0x9E3779B97F4A7C15ULL));
 
   if (g_stuck_irq_ms > 0) sim_hal.chip().setStuckIrqMs((uint32_t)g_stuck_irq_ms);
+  // This node's clock is the engine's, so the chip can judge when a frame began
+  // and refuse one its receiver was not listening for, as silicon does.
+  sim_hal.chip().setStrictReceive(!g_lenient_receive);
   setup();
   drainTx();
   flushConsole();
