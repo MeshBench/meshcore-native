@@ -83,6 +83,7 @@ constexpr uint8_t kRadioStats = 0x09;  // node -> host: what the chip has seen
 constexpr uint8_t kFrameFailed = 0x0A; // host -> node: a frame locked onto and lost
 constexpr uint8_t kCapFrameFailed = 0x01; // stats byte 47: this bridge takes kFrameFailed
 constexpr uint8_t kCapNoLock = 0x02;      // and its chip reads failure 3 as never locked onto
+constexpr uint8_t kCapRxFaults = 0x04;    // and failures 4-6: no CRC, the next header before/during the read
 
 sock_t gFd = BAD_SOCK;
 std::deque<uint8_t> gConsoleIn;
@@ -403,7 +404,8 @@ int main(int argc, char** argv) {
           // not know, and the engine cannot tell the two apart any other way.
           // A chip older than ABI 1.7 reads failure 3 as a CRC error, so the
           // engine sends it only where this bit says the chip knows better.
-          sb[47] = kCapFrameFailed | kCapNoLock;
+          // Failures 4 to 6 need ABI 1.8, which the vendored chip is.
+          sb[47] = kCapFrameFailed | kCapNoLock | kCapRxFaults;
           writeMsg(gFd, kRadioStats, sb, sizeof(sb));
         }
         if (!writeMsg(gFd, kAck, payload.data(), 4)) goto done;
