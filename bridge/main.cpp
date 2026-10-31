@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -159,11 +160,24 @@ void drainTx() {
 
 uint32_t gBusyUntil = 0;
 
+// Frames whose carrier starts at a millisecond this node has not reached yet:
+// the engine says once per tick, and a tick can be ten of these.
+std::deque<std::pair<uint32_t, std::vector<uint8_t>>> gStarts;
+
+void startFrames() {
+  while (!gStarts.empty() && gStarts.front().first <= g_sim_millis) {
+    auto& f = gStarts.front().second;
+    sim_hal.chip().frameStarted(f.data(), f.size());
+    gStarts.pop_front();
+  }
+}
+
 // One millisecond of the node. The radio's interrupt is serviced every time, as
 // an ISR runs whatever the application is doing; the application runs only once
 // it has finished with the last packet it took.
 void stepNode() {
   sim_hal.beginTick(g_sim_millis);
+  startFrames();
   sim_hal.servicePendingIrq();
   if (g_sim_millis < gBusyUntil) return;
   const uint32_t reads = sim_hal.bufferReads();
@@ -296,9 +310,14 @@ int main(int argc, char** argv) {
         break;
 
       case kFrameStarted:
-        // Only from an engine that read kCapFrameStarted: the frame lands in the
-        // chip's buffer as it arrives, so a late read can find the next one.
-        sim_hal.chip().frameStarted(payload.data(), payload.size());
+        // [start ms:4][frame], from an engine that read kCapFrameStarted. The
+        // frame lands in the chip's buffer as it arrives from that millisecond,
+        // so a late read can find the next one.
+        if (n > 4) {
+          uint32_t at = ((uint32_t)payload[0] << 24) | ((uint32_t)payload[1] << 16) |
+                        ((uint32_t)payload[2] << 8) | payload[3];
+          gStarts.emplace_back(at, std::vector<uint8_t>(payload.begin() + 4, payload.end()));
+        }
         break;
 
       case kTxDone:
