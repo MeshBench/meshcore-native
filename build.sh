@@ -133,6 +133,11 @@ cxxflags=("${STD:--std=c++17}" -O2 -w -fpermissive -DMESHCORE_HOST_VARIANT=1 -DN
 if [ -n "${STUCK_IRQ_MS:-}" ]; then
   cxxflags+=("-DVIRTUAL_SX1262_STUCK_IRQ_MS=$STUCK_IRQ_MS")
 fi
+# A build whose application is busy this long after taking each packet, as a
+# real MCU is. Same flag as --rx-busy-ms, for an engine that cannot pass one.
+if [ -n "${RX_BUSY_MS:-}" ]; then
+  cxxflags+=("-DSIM_RX_BUSY_MS=$RX_BUSY_MS")
+fi
 
 # Flags this particular role needs, if any. See roles.d/README.md.
 if [ -f "$root/roles.d/$role.flags" ]; then
