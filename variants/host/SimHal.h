@@ -70,6 +70,8 @@ class SimHal : public RadioLibHal {
     // timing arithmetic sees a plausible driver rather than an instant one.
     advanceUs(30 + len * 2);
     chip_.spiTransfer(out, len, in);
+    // A command that clears the flags drops the line, so the next one is an edge.
+    if (!chip_.irqAsserted()) dio1High_ = false;
   }
 
   // ---- the simulator's side ----
@@ -88,12 +90,18 @@ class SimHal : public RadioLibHal {
   // Deliver a pending interrupt to RadioLib, if the chip has raised one. Called
   // once per tick rather than from inside the chip, so an ISR never runs in the
   // middle of an SPI transaction the way it cannot on real hardware either.
+  //
+  // On the rising edge only, as RadioLib attaches DIO1: a line left high by a
+  // firmware that has not yet read the chip interrupts once, not every tick, and
+  // a second packet landing while it is still high raises nothing.
   void servicePendingIrq() {
-    if (isr_ && chip_.irqAsserted() && !inIsr_) {
+    const bool high = chip_.irqAsserted();
+    if (isr_ && high && !dio1High_ && !inIsr_) {
       inIsr_ = true;
       isr_();
       inIsr_ = false;
     }
+    dio1High_ = high;
   }
 
   static constexpr uint32_t kPinNss = 1;
@@ -110,6 +118,7 @@ class SimHal : public RadioLibHal {
   VirtualSX1262 chip_;
   void (*isr_)(void) = nullptr;
   bool inIsr_ = false;
+  bool dio1High_ = false;
   uint64_t localUs_ = 0;
 };
 
