@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,14 @@ void loop();
 extern uint32_t g_sim_millis;
 int g_stuck_irq_ms = 0;
 bool g_lenient_receive = false;
+// How long the application is busy after it takes a packet from its radio: a
+// real MCU spends that verifying, decrypting and deciding whether to forward,
+// and a packet that lands meanwhile waits in the chip. Zero, the default, is an
+// application that is never late, which no hardware is.
+#ifndef SIM_RX_BUSY_MS
+#define SIM_RX_BUSY_MS 0
+#endif
+int g_rx_busy_ms = SIM_RX_BUSY_MS;
 // The receiver-noise stream the chip model draws from. Distinct per node so
 // two nodes do not read the same "random" bytes at the same instants - which
 // is what seeds each node's RNG, its CSMA backoff and its advert jitter. Left
@@ -81,9 +90,11 @@ constexpr uint8_t kConsoleOut = 0x07;  // bytes the node printed
 constexpr uint8_t kChannelBusy = 0x08; // is another station on the air here?
 constexpr uint8_t kRadioStats = 0x09;  // node -> host: what the chip has seen
 constexpr uint8_t kFrameFailed = 0x0A; // host -> node: a frame locked onto and lost
+constexpr uint8_t kFrameStarted = 0x0B; // host -> node: a frame whose carrier has begun
 constexpr uint8_t kCapFrameFailed = 0x01; // stats byte 47: this bridge takes kFrameFailed
 constexpr uint8_t kCapNoLock = 0x02;      // and its chip reads failure 3 as never locked onto
 constexpr uint8_t kCapRxFaults = 0x04;    // and failures 4-6: no CRC, the next header before/during the read
+constexpr uint8_t kCapFrameStarted = 0x08; // and kFrameStarted
 
 sock_t gFd = BAD_SOCK;
 std::deque<uint8_t> gConsoleIn;
@@ -147,6 +158,34 @@ void drainTx() {
   writeMsg(gFd, kFrame, chip.pendingTx.data(), chip.pendingTx.size());
 }
 
+uint32_t gBusyUntil = 0;
+
+// Frames whose carrier starts at a millisecond this node has not reached yet:
+// the engine says once per tick, and a tick can be ten of these.
+std::deque<std::pair<uint32_t, std::vector<uint8_t>>> gStarts;
+
+void startFrames() {
+  while (!gStarts.empty() && gStarts.front().first <= g_sim_millis) {
+    auto& f = gStarts.front().second;
+    sim_hal.chip().frameStarted(f.data(), f.size());
+    gStarts.pop_front();
+  }
+}
+
+// One millisecond of the node. The radio's interrupt is serviced every time, as
+// an ISR runs whatever the application is doing; the application runs only once
+// it has finished with the last packet it took.
+void stepNode() {
+  sim_hal.beginTick(g_sim_millis);
+  startFrames();
+  sim_hal.servicePendingIrq();
+  if (g_sim_millis < gBusyUntil) return;
+  const uint32_t reads = sim_hal.bufferReads();
+  loop();
+  drainTx();
+  if (g_rx_busy_ms > 0 && sim_hal.bufferReads() != reads) gBusyUntil = g_sim_millis + g_rx_busy_ms;
+}
+
 sock_t connectTo(const std::string& addr) {
 #ifdef _WIN32
   WSADATA wsa;
@@ -207,6 +246,7 @@ int main(int argc, char** argv) {
     // The chip's inbox grace, back on: for reproducing a run made before this
     // build received only what its receiver was listening for.
     else if (!strcmp(argv[i], "--lenient-receive")) g_lenient_receive = true;
+    else if (!strcmp(argv[i], "--rx-busy-ms")) g_rx_busy_ms = atoi(next());
     else if (!strcmp(argv[i], "--print-airtime")) printAirtimeFor = atoi(next());
   }
 
@@ -219,7 +259,7 @@ int main(int argc, char** argv) {
   }
   if (bridge.empty()) {
     fprintf(stderr,
-            "usage: %s --bridge host:port [--seed N] [--sf N] [--bw-khz F] [--cr N]\n"
+            "usage: %s --bridge host:port [--seed N] [--sf N] [--bw-khz F] [--cr N] [--rx-busy-ms N]\n"
             "A MeshCore node with its radio and console on a socket.\n",
             argv[0]);
     return 2;
@@ -267,6 +307,17 @@ int main(int argc, char** argv) {
         // more, a payload it could not is RxDone beside CrcErr with the corrupt
         // bytes in the buffer. Without this the firmware's error paths never run.
         if (n >= 1) sim_hal.chip().deliverFrameFailed(payload.data() + 1, n - 1, payload[0]);
+        break;
+
+      case kFrameStarted:
+        // [start ms:4][frame], from an engine that read kCapFrameStarted. The
+        // frame lands in the chip's buffer as it arrives from that millisecond,
+        // so a late read can find the next one.
+        if (n > 4) {
+          uint32_t at = ((uint32_t)payload[0] << 24) | ((uint32_t)payload[1] << 16) |
+                        ((uint32_t)payload[2] << 8) | payload[3];
+          gStarts.emplace_back(at, std::vector<uint8_t>(payload.begin() + 4, payload.end()));
+        }
         break;
 
       case kTxDone:
@@ -333,16 +384,10 @@ int main(int argc, char** argv) {
             if (g_sim_millis % 1000 == 0) {
               rtc_clock.advance(1);
             }
-            sim_hal.beginTick(g_sim_millis);
-            sim_hal.servicePendingIrq();
-            loop();
-            drainTx();
+            stepNode();
           }
         } else {
-          sim_hal.beginTick(g_sim_millis);
-          sim_hal.servicePendingIrq();
-          loop();
-          drainTx();
+          stepNode();
         }
         flushConsole();
         {
@@ -404,8 +449,8 @@ int main(int argc, char** argv) {
           // not know, and the engine cannot tell the two apart any other way.
           // A chip older than ABI 1.7 reads failure 3 as a CRC error, so the
           // engine sends it only where this bit says the chip knows better.
-          // Failures 4 to 6 need ABI 1.8, which the vendored chip is.
-          sb[47] = kCapFrameFailed | kCapNoLock | kCapRxFaults;
+          // Failures 4 to 6 need ABI 1.8 and kFrameStarted 1.9, which the vendored chip is.
+          sb[47] = kCapFrameFailed | kCapNoLock | kCapRxFaults | kCapFrameStarted;
           writeMsg(gFd, kRadioStats, sb, sizeof(sb));
         }
         if (!writeMsg(gFd, kAck, payload.data(), 4)) goto done;

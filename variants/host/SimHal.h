@@ -69,6 +69,7 @@ class SimHal : public RadioLibHal {
     // A command costs time even though BUSY never rises, so the firmware's own
     // timing arithmetic sees a plausible driver rather than an instant one.
     advanceUs(30 + len * 2);
+    if (len && out[0] == kReadBuffer) bufferReads_++;
     chip_.spiTransfer(out, len, in);
     // A command that clears the flags drops the line, so the next one is an edge.
     if (!chip_.irqAsserted()) dio1High_ = false;
@@ -77,6 +78,9 @@ class SimHal : public RadioLibHal {
   // ---- the simulator's side ----
 
   VirtualSX1262& chip() { return chip_; }
+
+  // ReadBuffer commands so far: how the bridge sees the firmware take a packet.
+  uint32_t bufferReads() const { return bufferReads_; }
 
   // Called by the bridge at the start of each tick. The node's local clock is
   // reconciled to network time here: if the firmware spent longer inside a tick
@@ -108,6 +112,7 @@ class SimHal : public RadioLibHal {
   static constexpr uint32_t kPinDio1 = 2;
   static constexpr uint32_t kPinReset = 3;
   static constexpr uint32_t kPinBusy = 4;
+  static constexpr uint8_t kReadBuffer = 0x1E;
 
  private:
   void advanceUs(uint64_t us) {
@@ -120,6 +125,7 @@ class SimHal : public RadioLibHal {
   bool inIsr_ = false;
   bool dio1High_ = false;
   uint64_t localUs_ = 0;
+  uint32_t bufferReads_ = 0;
 };
 
 extern SimHal sim_hal;
