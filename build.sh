@@ -160,7 +160,7 @@ candidates=()
 while IFS= read -r _f; do
   [ -n "$_f" ] && candidates+=("$_f")
 done <<CANDIDATES
-$(
+$({
   find "$MESHCORE/src" -maxdepth 2 -name '*.cpp' 2>/dev/null
   # The radio driver layer sits a level deeper than the sweep above reaches,
   # and is the whole reason RadioLib is here: this is MeshCore's own driver.
@@ -171,7 +171,7 @@ $(
   find "$radiolib/protocols/PhysicalLayer" -name '*.cpp' 2>/dev/null
   find "$radiolib/utils" -name '*.cpp' 2>/dev/null
   find "$src" -maxdepth 1 -name '*.cpp' 2>/dev/null
-)
+} | LC_ALL=C sort)
 CANDIDATES
 
 skipped=()
