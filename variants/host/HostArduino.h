@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <type_traits>
+
 // Seeded rather than entropic: a run has to be reproducible from its seed, and
 // the identity a node generates comes through here.
 //
@@ -59,16 +61,22 @@ inline long hostRandom() {
 // standard library breaks <limits>, whose numeric_limits<T>::min() then looks
 // like a macro call with one argument. That produced 368 errors inside libstdc++
 // and none in any MeshCore file, which is a confusing place to start debugging.
+//
+// Each returns a value, never a reference: when both arguments have one type,
+// `decltype(a < b ? a : b)` is a reference to the function's own by-value
+// parameter, gone once it returns. std::decay_t keeps the type a macro's
+// expression would have, without the reference.
 template <class T, class U>
-constexpr auto min(T a, U b) -> decltype(a < b ? a : b) {
+constexpr auto min(T a, U b) -> std::decay_t<decltype(a < b ? a : b)> {
   return a < b ? a : b;
 }
 template <class T, class U>
-constexpr auto max(T a, U b) -> decltype(a > b ? a : b) {
+constexpr auto max(T a, U b) -> std::decay_t<decltype(a > b ? a : b)> {
   return a > b ? a : b;
 }
 template <class T, class L, class H>
-constexpr auto constrain(T v, L lo, H hi) -> decltype(v < lo ? lo : (v > hi ? hi : v)) {
+constexpr auto constrain(T v, L lo, H hi)
+    -> std::decay_t<decltype(v < lo ? lo : (v > hi ? hi : v))> {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
