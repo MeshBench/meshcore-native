@@ -172,7 +172,17 @@ class Adafruit_LittleFS {
     // this fails, and it fails silently as a null file.
     auto slash = p.find_last_of('/');
     if (slash != std::string::npos) ensureDir(p.substr(0, slash));
-    FILE* f = fopen(p.c_str(), mode);
+    // FILE_O_WRITE as Adafruit_LittleFS opens it on nRF52: read-write,
+    // created if missing, not truncated, positioned at the end. fopen's "wb"
+    // emptied the file, and putBlobByKey and openAppend rely on keeping it.
+    FILE* f;
+    if (strcmp(mode, FILE_O_WRITE) == 0) {
+      f = fopen(p.c_str(), "r+b");
+      if (!f) f = fopen(p.c_str(), "w+b");
+      if (f) fseek(f, 0, SEEK_END);
+    } else {
+      f = fopen(p.c_str(), mode);
+    }
     return File(f, p);
   }
 
